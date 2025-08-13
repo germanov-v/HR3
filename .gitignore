@@ -1,0 +1,72 @@
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+.idea
+
+# Thumbnails
+._*
+
+# Spotlight
+.Spotlight-V100
+
+# Trash
+.Trashes
+
+# macOS metadata
+*.swp
+*.lock
+*.lockfile
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vscode/
+.idea/
+
+# Rider
+*.DotSettings.user
+.idea/
+
+# Visual Studio Code
+.vscode/
+
+# Go
+/go/bin/
+/go/pkg/
+/go/src/
+/vendor/
+/coverage.out
+
+# Go test binaries
+*.test
+
+# Node/React
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Logs
+logs
+*.log
+
+# Env files
+.env
+.env.*
+
+# Build outputs
+dist/
+build/
+
+# Others
+*.local
+*.swp
+*.tmp
+
