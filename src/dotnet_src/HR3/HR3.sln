@@ -4,6 +4,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{8E87C2A1-5
 	ProjectSection(SolutionItems) = preProject
 		docs\identity.md = docs\identity.md
 		docs\self-ssl.md = docs\self-ssl.md
+		docs\appsettings.json = docs\appsettings.json
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{C75F7540-1D32-4200-B4F9-8D0473FA94B8}"
