@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Identity.Web.Models;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Identity.Web.Controllers;
 
@@ -13,10 +14,12 @@ public class HomeController : Controller
         _logger = logger;
     }
 
-    public IActionResult Index()
-    {
-        return View();
-    }
+    [HttpGet("/")]
+    public IActionResult Index() => View();
+
+    [Authorize]
+    [HttpGet("/secure")]
+    public IActionResult Secure() => View();
 
     public IActionResult Privacy()
     {

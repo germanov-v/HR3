@@ -1,0 +1,25 @@
+@{
+    Layout = "_Layout";
+    var user = Context.User;
+}
+<article>
+    <h2>Вы авторизованы ✅</h2>
+    <p><b>Имя:</b> @user.Identity!.Name</p>
+
+    <details>
+        <summary>Показать все клеймы</summary>
+        <table>
+            <thead><tr><th>Тип</th><th>Значение</th><th>Issuer</th></tr></thead>
+            <tbody>
+            @foreach (var c in user.Claims)
+            {
+                <tr>
+                    <td>@c.Type</td>
+                    <td>@c.Value</td>
+                    <td>@c.Issuer</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </details>
+</article>
