@@ -6,20 +6,24 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.IdentityModel.Tokens;
-// ... твои using-ы из кода
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHttpClient();
 
-// ===== JWT options =====
-var jwtSection = builder.Configuration.GetSection("Jwt");
-var jwtIssuer   = jwtSection["Issuer"];
-var jwtAudience = jwtSection["Audience"];
-var jwtKey      = jwtSection["Key"];
-var signingKey  = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey!));
+// ===== JWT options (валидация конфигурации) =====
+var jwtSection   = builder.Configuration.GetSection("Jwt");
+var jwtIssuer    = jwtSection["Issuer"]    ?? throw new InvalidOperationException("Missing Jwt:Issuer");
+var jwtAudience  = jwtSection["Audience"]  ?? throw new InvalidOperationException("Missing Jwt:Audience");
+var jwtKey       = jwtSection["Key"]       ?? throw new InvalidOperationException("Missing Jwt:Key");
+var signingKey   = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
 
-// ===== auth как у тебя (cookie + yandex) =====
+// ===== OAuth: Яндекс =====
+var yandexId     = builder.Configuration["Authentication:Yandex:ClientId"]
+                   ?? throw new InvalidOperationException("Missing Authentication:Yandex:ClientId");
+var yandexSecret = builder.Configuration["Authentication:Yandex:ClientSecret"]
+                   ?? throw new InvalidOperationException("Missing Authentication:Yandex:ClientSecret");
+
 builder.Services
     .AddAuthentication(options =>
     {
@@ -34,58 +38,80 @@ builder.Services
     })
     .AddOAuth("yandex", options =>
     {
-        options.ClientId = builder.Configuration["Authentication:Yandex:ClientId"]!;
-        options.ClientSecret = builder.Configuration["Authentication:Yandex:ClientSecret"]!;
+        options.ClientId = yandexId;
+        options.ClientSecret = yandexSecret;
+
+        // ВАЖНО: этот путь должен совпадать с Redirect URI в кабинете Яндекса
         options.CallbackPath = "/auth/callback-yandex";
 
-        options.AuthorizationEndpoint = "https://oauth.yandex.ru/authorize";
-        options.TokenEndpoint = "https://oauth.yandex.ru/token";
+        options.AuthorizationEndpoint   = "https://oauth.yandex.ru/authorize";
+        options.TokenEndpoint           = "https://oauth.yandex.ru/token";
         options.UserInformationEndpoint = "https://login.yandex.ru/info";
 
+        // Нужные разрешения
         options.Scope.Add("login:email");
-        options.Scope.Add("login:info"); 
+        options.Scope.Add("login:info");
         options.Scope.Add("login:avatar");
+
         options.SaveTokens = true;
+
+        // Базовые клеймы из JSON
         options.ClaimActions.MapJsonKey(ClaimTypes.NameIdentifier, "id");
-        options.ClaimActions.MapJsonKey(ClaimTypes.Name, "display_name");
         options.ClaimActions.MapJsonKey(ClaimTypes.Email, "default_email");
+        options.ClaimActions.MapJsonKey(ClaimTypes.GivenName, "first_name");
+        options.ClaimActions.MapJsonKey(ClaimTypes.Surname, "last_name");
+        options.ClaimActions.MapJsonKey("urn:yandex:login", "login");
+        options.ClaimActions.MapJsonKey("urn:yandex:display_name", "display_name");
+        options.ClaimActions.MapJsonKey("urn:yandex:avatar_id", "default_avatar_id");
 
         options.Events = new OAuthEvents
         {
             OnCreatingTicket = async ctx =>
             {
-                // var accessToken = ctx.AccessToken!;
-                // var userInfoUrl = $"{options.UserInformationEndpoint}?format=json&oauth_token={accessToken}";
-                //
-                // using var response = await ctx.Backchannel.GetAsync(userInfoUrl, ctx.HttpContext.RequestAborted);
-                // response.EnsureSuccessStatusCode();
-                //
-                // using var stream = await response.Content.ReadAsStreamAsync();
-                // using var doc = await JsonDocument.ParseAsync(stream);
-                //
-                // ctx.RunClaimActions(doc.RootElement);
+                // Яндекс ожидает access_token (в query или в заголовке)
                 var url = $"{options.UserInformationEndpoint}?format=json&oauth_token={ctx.AccessToken}";
+
                 using var resp = await ctx.Backchannel.GetAsync(url, ctx.HttpContext.RequestAborted);
                 resp.EnsureSuccessStatusCode();
 
                 using var stream = await resp.Content.ReadAsStreamAsync();
                 using var doc = await JsonDocument.ParseAsync(stream);
+                var root = doc.RootElement;
 
-                ctx.RunClaimActions(doc.RootElement);
+                // Применяем маппинг
+                ctx.RunClaimActions(root);
+
+                // Надежно выставим Name (фолбэки)
+                string? pick(params string[] keys)
+                {
+                    foreach (var k in keys)
+                        if (root.TryGetProperty(k, out var v) && !string.IsNullOrWhiteSpace(v.GetString()))
+                            return v.GetString();
+                    return null;
+                }
+
+                var name = pick("real_name", "display_name", "login", "default_email");
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    ((ClaimsIdentity)ctx.Principal!.Identity!).AddClaim(new Claim(ClaimTypes.Name, name!));
+                }
             }
         };
     });
+
 builder.Services.AddAuthorization();
+
 var app = builder.Build();
 
+app.UseHttpsRedirection();       // для корректной работы localhost https
 app.UseAuthentication();
 app.UseAuthorization();
 
+// ====== ФЛОУ ======
 
-// /oauth/yandex/start?returnUrl=...
+// 1) Старт OAuth — редирект на Яндекс. Можно передать returnUrl (куда вернем пользователя после входа)
 app.MapGet("/oauth/yandex/start", (HttpContext http, string? returnUrl) =>
 {
-    // После успешного входа вернемся на наш post-signin с исходным returnUrl
     var props = new AuthenticationProperties
     {
         RedirectUri = $"/oauth/post-signin{(string.IsNullOrWhiteSpace(returnUrl) ? "" : $"?returnUrl={Uri.EscapeDataString(returnUrl)}")}"
@@ -93,39 +119,30 @@ app.MapGet("/oauth/yandex/start", (HttpContext http, string? returnUrl) =>
     return Results.Challenge(props, new[] { "yandex" });
 });
 
-
-// OAuth handler уже положил Identity в cookie (в рамках ЭТОГО API)
+// 2) После успешного коллбэка (Cookie создана в этом сервисе) — выдаем наш JWT и редиректим обратно
 app.MapGet("/oauth/post-signin", (HttpContext http, string? returnUrl) =>
 {
     if (http.User?.Identity?.IsAuthenticated != true)
         return Results.Unauthorized();
 
-    // Сгенерим наш JWT на основе клеймов пользователя
-    var token = IssueJwt(http.User, jwtIssuer!, jwtAudience!, signingKey);
+    var token = IssueJwt(http.User, jwtIssuer, jwtAudience, signingKey);
 
     if (!string.IsNullOrWhiteSpace(returnUrl))
     {
-        // Вернем пользователя в MVC-клиент с access_token в query
         var sep = returnUrl.Contains('?') ? "&" : "?";
-        var redirect = $"{returnUrl}{sep}access_token={Uri.EscapeDataString(token)}";
-        return Results.Redirect(redirect);
+        return Results.Redirect($"{returnUrl}{sep}access_token={Uri.EscapeDataString(token)}");
     }
 
-    // Если returnUrl не передали — просто JSON
     return Results.Json(new { access_token = token });
 });
 
-// === Твои предыдущие ручки можно оставить для отладки ===
+// ====== Отладочные ручки ======
 app.MapGet("/signin/{provider}", (HttpContext http, string provider) =>
 {
-    var supported = new[] { "yandex" /*, "vk","sber"*/ };
-    if (!supported.Contains(provider))
+    if (provider != "yandex")
         return Results.BadRequest(new { error = "Unsupported provider" });
 
-    var props = new AuthenticationProperties
-    {
-        RedirectUri = "/me"
-    };
+    var props = new AuthenticationProperties { RedirectUri = "/me" };
     return Results.Challenge(props, new[] { provider });
 });
 
@@ -133,6 +150,7 @@ app.MapGet("/me", (ClaimsPrincipal user) =>
 {
     if (user?.Identity?.IsAuthenticated != true)
         return Results.Unauthorized();
+
     return Results.Ok(new
     {
         name = user.Identity!.Name,
@@ -146,7 +164,7 @@ app.MapPost("/logout", async (HttpContext http) =>
     return Results.Ok(new { ok = true });
 });
 
-app.MapGet("/", () => "Hello World!");
+app.MapGet("/", () => "Auth API is up");
 
 app.Run();
 
@@ -156,15 +174,21 @@ static string IssueJwt(ClaimsPrincipal principal, string issuer, string audience
     var now = DateTime.UtcNow;
     var claims = principal.Claims.ToList();
 
-    // гарантируем наличие NameIdentifier как sub
+    // sub обязателен
     var sub = claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value
               ?? claims.FirstOrDefault(c => c.Type == "sub")?.Value
               ?? Guid.NewGuid().ToString("N");
 
+    // уникализируем пары (Type, Value), чтобы не дублировать
+    var unique = claims
+        .Append(new Claim("sub", sub))
+        .GroupBy(c => (c.Type, c.Value))
+        .Select(g => g.First());
+
     var jwt = new JwtSecurityToken(
         issuer: issuer,
         audience: audience,
-        claims: claims.Append(new Claim("sub", sub)).DistinctBy(c => (c.Type, c.Value)),
+        claims: unique,
         notBefore: now,
         expires: now.AddHours(2),
         signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)
