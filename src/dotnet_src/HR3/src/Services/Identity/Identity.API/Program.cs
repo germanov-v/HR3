@@ -43,6 +43,8 @@ builder.Services
         options.UserInformationEndpoint = "https://login.yandex.ru/info";
 
         options.Scope.Add("login:email");
+        options.Scope.Add("login:info"); 
+        options.Scope.Add("login:avatar");
         options.SaveTokens = true;
         options.ClaimActions.MapJsonKey(ClaimTypes.NameIdentifier, "id");
         options.ClaimActions.MapJsonKey(ClaimTypes.Name, "display_name");
@@ -52,13 +54,21 @@ builder.Services
         {
             OnCreatingTicket = async ctx =>
             {
-                var accessToken = ctx.AccessToken!;
-                var userInfoUrl = $"{options.UserInformationEndpoint}?format=json&oauth_token={accessToken}";
+                // var accessToken = ctx.AccessToken!;
+                // var userInfoUrl = $"{options.UserInformationEndpoint}?format=json&oauth_token={accessToken}";
+                //
+                // using var response = await ctx.Backchannel.GetAsync(userInfoUrl, ctx.HttpContext.RequestAborted);
+                // response.EnsureSuccessStatusCode();
+                //
+                // using var stream = await response.Content.ReadAsStreamAsync();
+                // using var doc = await JsonDocument.ParseAsync(stream);
+                //
+                // ctx.RunClaimActions(doc.RootElement);
+                var url = $"{options.UserInformationEndpoint}?format=json&oauth_token={ctx.AccessToken}";
+                using var resp = await ctx.Backchannel.GetAsync(url, ctx.HttpContext.RequestAborted);
+                resp.EnsureSuccessStatusCode();
 
-                using var response = await ctx.Backchannel.GetAsync(userInfoUrl, ctx.HttpContext.RequestAborted);
-                response.EnsureSuccessStatusCode();
-
-                using var stream = await response.Content.ReadAsStreamAsync();
+                using var stream = await resp.Content.ReadAsStreamAsync();
                 using var doc = await JsonDocument.ParseAsync(stream);
 
                 ctx.RunClaimActions(doc.RootElement);
@@ -71,7 +81,7 @@ var app = builder.Build();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// === 1) ТВОЙ ЭНДПОИНТ ДЛЯ СТАРТА ===
+
 // /oauth/yandex/start?returnUrl=...
 app.MapGet("/oauth/yandex/start", (HttpContext http, string? returnUrl) =>
 {
@@ -83,7 +93,7 @@ app.MapGet("/oauth/yandex/start", (HttpContext http, string? returnUrl) =>
     return Results.Challenge(props, new[] { "yandex" });
 });
 
-// === 2) ПОСЛЕ УСПЕШНОГО ВХОДА ЧЕРЕЗ ЯНДЕКС ===
+
 // OAuth handler уже положил Identity в cookie (в рамках ЭТОГО API)
 app.MapGet("/oauth/post-signin", (HttpContext http, string? returnUrl) =>
 {
