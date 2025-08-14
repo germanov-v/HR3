@@ -3,6 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{8E87C2A1-513A-4CAB-8B36-C3865AB877D1}"
 	ProjectSection(SolutionItems) = preProject
 		docs\identity.md = docs\identity.md
+		docs\self-ssl.md = docs\self-ssl.md
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{C75F7540-1D32-4200-B4F9-8D0473FA94B8}"
