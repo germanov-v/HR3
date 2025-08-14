@@ -23,6 +23,10 @@ var yandexId     = builder.Configuration["Authentication:Yandex:ClientId"]
                    ?? throw new InvalidOperationException("Missing Authentication:Yandex:ClientId");
 var yandexSecret = builder.Configuration["Authentication:Yandex:ClientSecret"]
                    ?? throw new InvalidOperationException("Missing Authentication:Yandex:ClientSecret");
+var vkId     = builder.Configuration["Authentication:VK:ClientId"]
+               ?? throw new InvalidOperationException("Missing Authentication:VK:ClientId");
+var vkSecret = builder.Configuration["Authentication:VK:ClientSecret"]
+               ?? throw new InvalidOperationException("Missing Authentication:VK:ClientSecret");
 
 builder.Services
     .AddAuthentication(options =>
@@ -97,7 +101,70 @@ builder.Services
                 }
             }
         };
-    });
+    })
+    
+    .AddOAuth("vk", options =>
+    {
+        options.ClientId = vkId;
+        options.ClientSecret = vkSecret;
+        options.CallbackPath = "/auth/callback-vk";
+
+        options.AuthorizationEndpoint   = "https://oauth.vk.com/authorize";
+        options.TokenEndpoint           = "https://oauth.vk.com/access_token";
+        options.UserInformationEndpoint = "https://api.vk.com/method/users.get";
+
+        options.Scope.Add("email");         // e-mail приходит в ответе на токен
+        options.SaveTokens = true;
+
+        // Базовые клеймы (часть из user.get, часть из токена)
+        options.ClaimActions.MapJsonKey(ClaimTypes.NameIdentifier, "id"); // заполним вручную из ответа
+        options.ClaimActions.MapJsonKey(ClaimTypes.GivenName, "first_name");
+        options.ClaimActions.MapJsonKey(ClaimTypes.Surname, "last_name");
+        options.ClaimActions.MapJsonKey("urn:vk:screen_name", "screen_name");
+        options.ClaimActions.MapJsonKey("urn:vk:photo", "photo_200");
+
+        options.Events = new OAuthEvents
+        {
+            OnCreatingTicket = async ctx =>
+            {
+                // 1) e-mail может прийти в ответе обмена токена
+                var email = ctx.TokenResponse.Response?.RootElement.TryGetProperty("email", out var em) == true
+                    ? em.GetString()
+                    : null;
+
+                // 2) профиль с users.get
+                var accessToken = ctx.AccessToken!;
+                var userInfoUrl =
+                    $"{options.UserInformationEndpoint}?access_token={Uri.EscapeDataString(accessToken)}&v=5.199&fields=photo_200,screen_name,first_name,last_name";
+
+                using var response = await ctx.Backchannel.GetAsync(userInfoUrl, ctx.HttpContext.RequestAborted);
+                response.EnsureSuccessStatusCode();
+
+                using var stream = await response.Content.ReadAsStreamAsync();
+                using var doc = await JsonDocument.ParseAsync(stream);
+
+                var user = doc.RootElement.GetProperty("response")[0];
+
+                // Применим маппинг
+                ctx.RunClaimActions(user);
+
+                // Обязательные/полезные клеймы вручную
+                var vkId = user.GetProperty("id").GetInt64().ToString();
+                var first = user.GetProperty("first_name").GetString();
+                var last  = user.GetProperty("last_name").GetString();
+                var displayName = $"{first} {last}".Trim();
+
+                var id = (ClaimsIdentity)ctx.Principal!.Identity!;
+                id.AddClaim(new Claim(ClaimTypes.NameIdentifier, vkId, ClaimValueTypes.String, "vk"));
+                id.AddClaim(new Claim(ClaimTypes.Name, displayName));
+
+                if (!string.IsNullOrEmpty(email))
+                    id.AddClaim(new Claim(ClaimTypes.Email, email!));
+            }
+        };
+    })
+    
+    ;
 
 builder.Services.AddAuthorization();
 
@@ -109,7 +176,19 @@ app.UseAuthorization();
 
 // ====== ФЛОУ ======
 
-// 1) Старт OAuth — редирект на Яндекс. Можно передать returnUrl (куда вернем пользователя после входа)
+app.MapGet("/oauth/{provider}/start", (HttpContext http, string provider, string? returnUrl) =>
+{
+    var supported = new[] { "yandex", "vk" };
+    if (!supported.Contains(provider))
+        return Results.BadRequest(new { error = "Unsupported provider" });
+
+    var props = new AuthenticationProperties
+    {
+        RedirectUri = $"/oauth/post-signin{(string.IsNullOrWhiteSpace(returnUrl) ? "" : $"?returnUrl={Uri.EscapeDataString(returnUrl)}")}"
+    };
+    return Results.Challenge(props, new[] { provider });
+});
+
 app.MapGet("/oauth/yandex/start", (HttpContext http, string? returnUrl) =>
 {
     var props = new AuthenticationProperties

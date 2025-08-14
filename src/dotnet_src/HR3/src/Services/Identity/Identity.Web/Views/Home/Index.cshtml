@@ -3,6 +3,9 @@
 }
 <article>
     <h1>Добро пожаловать</h1>
-    <p>Нажмите, чтобы войти через Яндекс (через Auth‑API).</p>
-    <a role="button" href="/auth/signin">Войти через Яндекс</a>
+    <p>Выберите провайдера авторизации:</p>
+    <div style="display:flex; gap:1rem; flex-wrap:wrap;">
+        <a role="button" href="/auth/signin?provider=yandex">Войти через Яндекс</a>
+        <a role="button" href="/auth/signin?provider=vk">Войти через VK</a>
+    </div>
 </article>

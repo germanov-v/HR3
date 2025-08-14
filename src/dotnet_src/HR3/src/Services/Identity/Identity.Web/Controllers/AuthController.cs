@@ -20,15 +20,23 @@ public class AuthController : Controller
         _validationParams = validationParams;
     }
 
-    // Кнопка "Войти" отправляет сюда
+    // // Кнопка "Войти" отправляет сюда
+    // [HttpGet("/auth/signin")]
+    // public IActionResult SignIn(string? returnUrl = null)
+    // {
+    //     // Куда вернётся Auth-API после Яндекса
+    //     var callback = Url.ActionLink("Callback", "Auth", null, Request.Scheme)!;
+    //
+    //     // Редиректим пользователя в наш Auth-API для старта OAuth с Яндексом
+    //     var startUrl = $"{_authApi.BaseUrl.TrimEnd('/')}/oauth/yandex/start?returnUrl={Uri.EscapeDataString(callback)}";
+    //     return Redirect(startUrl);
+    // }
+    
     [HttpGet("/auth/signin")]
-    public IActionResult SignIn(string? returnUrl = null)
+    public IActionResult SignIn([FromQuery] string provider = "yandex", string? returnUrl = null)
     {
-        // Куда вернётся Auth-API после Яндекса
         var callback = Url.ActionLink("Callback", "Auth", null, Request.Scheme)!;
-
-        // Редиректим пользователя в наш Auth-API для старта OAuth с Яндексом
-        var startUrl = $"{_authApi.BaseUrl.TrimEnd('/')}/oauth/yandex/start?returnUrl={Uri.EscapeDataString(callback)}";
+        var startUrl = $"{_authApi.BaseUrl.TrimEnd('/')}/oauth/{provider}/start?returnUrl={Uri.EscapeDataString(callback)}";
         return Redirect(startUrl);
     }
 
