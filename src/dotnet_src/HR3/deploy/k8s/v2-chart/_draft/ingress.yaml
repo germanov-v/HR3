@@ -1,0 +1,37 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jr2-ingress
+  annotations:
+    # (Опционально) HSTS и редиректы можно включить в Traefik/middleware отдельно
+    kubernetes.io/ingress.class: traefik
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - identity.v2.jobradar.ru
+      secretName: identity-v2-jobradar-ru-tls
+    - hosts:
+        - api.v2.jobradar.ru
+      secretName: api-v2-jobradar-ru-tls
+  rules:
+    - host: identity.v2.jobradar.ru
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: identity
+                port:
+                  number: 80
+    - host: api.v2.jobradar.ru
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 80

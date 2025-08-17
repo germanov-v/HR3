@@ -1,0 +1,16 @@
+{{- if .Values.certificates.enabled }}
+{{- range .Values.ingress.hosts }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ regexReplaceAll "\\." .name "-" }}
+  namespace: {{ $.Values.namespace }}
+spec:
+  secretName: {{ regexReplaceAll "\\." .name "-" }}-tls
+  issuerRef:
+    kind: {{ $.Values.certificates.issuerKind | default "ClusterIssuer" }}
+    name: {{ $.Values.certificates.issuerName | default "letsencrypt" }}
+  dnsNames: [ "{{ .name }}" ]
+{{- end }}
+{{- end }}

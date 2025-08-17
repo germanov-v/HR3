@@ -1,0 +1,35 @@
+namespace: jr2
+
+ingress:
+  className: traefik
+  # Если cert-manager уже настроен (ClusterIssuer):
+  clusterIssuer: letsencrypt
+  # домены
+  hosts:
+    - name: identity.v2.jobradar.ru
+      service: identity
+      path: /
+    - name: api.v2.jobradar.ru
+      service: api
+      path: /
+
+apps:
+  - name: identity
+    image: "<PUT-IMAGE-URL>"
+    replicas: 2
+    containerPort: 8080
+    readinessPath: /health
+    livenessPath: /live
+  - name: api
+    image: "<PUT-IMAGE-URL>"
+    replicas: 2
+    containerPort: 8080
+    readinessPath: /health
+    livenessPath: /live
+
+# Если хочешь явные Certificate-ресурсы:
+certificates:
+  enabled: true
+  issuerKind: ClusterIssuer
+  issuerName: letsencrypt
+  # секреты будут совпадать с доменами (заменятся точками на -)

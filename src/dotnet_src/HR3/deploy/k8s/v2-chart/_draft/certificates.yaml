@@ -1,0 +1,23 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: identity-v2-jobradar-ru
+spec:
+  secretName: identity-v2-jobradar-ru-tls
+  issuerRef:
+    name: letsencrypt           # на время теста можно поставить letsencrypt-staging
+    kind: ClusterIssuer
+  dnsNames:
+    - identity.v2.jobradar.ru
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: api-v2-jobradar-ru
+spec:
+  secretName: api-v2-jobradar-ru-tls
+  issuerRef:
+    name: letsencrypt           # или letsencrypt-staging для проверки
+    kind: ClusterIssuer
+  dnsNames:
+    - api.v2.jobradar.ru
